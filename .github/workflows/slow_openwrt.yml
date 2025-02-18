@@ -1,5 +1,5 @@
 ---
-name: Slow full Openwrt Build
+name: Slow full Openwrt Build for ARM Cortex-A7
 
 # yamllint disable-line rule:truthy
 on:
@@ -11,7 +11,7 @@ on:
 
 jobs:
   build:
-    name: Build ipkg
+    name: Build ipkg for ARM Cortex-A7
     runs-on: ubuntu-latest
 
     defaults:
@@ -58,10 +58,13 @@ jobs:
           path: openwrt/dl
           key: openwrt-dl-${{ env.OPENWRT_REF }}
 
-      - name: Setup openwrt config and environment
+      - name: Setup openwrt config and environment for ARM Cortex-A7
         run: |
-          echo "CONFIG_TARGET_x86=y" >.config
-          echo "CONFIG_TARGET_x86_64=y" >>.config
+          echo "CONFIG_TARGET_armvirt=y" >.config
+          echo "CONFIG_TARGET_armvirt_64=y" >>.config
+          echo "CONFIG_TARGET_armvirt_64_Default=y" >>.config
+          echo "CONFIG_TARGET_SUBTARGET=\"cortexa7\"" >>.config
+          echo "CONFIG_TARGET_ARCH_PACKAGES=\"arm_cortex-a7_neon-vfpv4\"" >>.config
 
       - name: Add package to openwrt config
         run: |
@@ -80,7 +83,7 @@ jobs:
         run: |
           make -j `nproc` tools/install toolchain/install
 
-      - name: Build dependancies
+      - name: Build dependencies
         run: |
           make -j `nproc` package/libs/libpcap/compile
 
@@ -93,10 +96,6 @@ jobs:
           make package/n3n/clean V=s
           make package/n3n/prepare USE_SOURCE_DIR=$GITHUB_WORKSPACE/n3n V=s
           make package/n3n/compile V=s
-
-# FIXME: add a way to run the test suite!
-#      - name: Run embedded tests
-#        run: make test
 
       - name: Upload built artifacts
         uses: actions/upload-artifact@v2
