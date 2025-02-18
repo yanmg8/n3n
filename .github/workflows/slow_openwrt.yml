@@ -1,19 +1,15 @@
----
 name: Slow full Openwrt Build for ARM Cortex-A7
 
-# yamllint disable-line rule:truthy
 on:
   push:
     branches:
       - openwrt
-
   workflow_dispatch:
 
 jobs:
   build:
     name: Build ipkg for ARM Cortex-A7
     runs-on: ubuntu-latest
-
     defaults:
       run:
         working-directory: openwrt
@@ -31,14 +27,13 @@ jobs:
           git rev-parse --short HEAD
 
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4  # 升级checkout到v4
         with:
           path: src
           fetch-depth: 0
 
       - name: Fix Checkout
-        run: |
-          git fetch --force --tags
+        run: git fetch --force --tags
         working-directory: src
 
       - name: Set ref
@@ -47,58 +42,50 @@ jobs:
           ./scripts/version.sh
         working-directory: src
 
-      - name: Copy src package definition into openwrt
-        run: |
-          cp -r src/packages/openwrt openwrt/package/n3n
-        working-directory: ./
+      - name: Copy src package definition
+        run: cp -r src/packages/openwrt openwrt/package/n3n
 
       - name: Cache openwrt source downloads
         uses: actions/cache@v3
         with:
           path: openwrt/dl
-          key: openwrt-dl-${{ env.OPENWRT_REF }}
+          key: openwrt-dl-${{ env.OPENWRT_REF }}-armv7  # 添加架构标识
 
-      - name: Setup openwrt config and environment for ARM Cortex-A7
+      - name: Setup ARM Cortex-A7 config
         run: |
-          echo "CONFIG_TARGET_armvirt=y" >.config
-          echo "CONFIG_TARGET_armvirt_64=y" >>.config
-          echo "CONFIG_TARGET_armvirt_64_Default=y" >>.config
-          echo "CONFIG_TARGET_SUBTARGET=\"cortexa7\"" >>.config
-          echo "CONFIG_TARGET_ARCH_PACKAGES=\"arm_cortex-a7_neon-vfpv4\"" >>.config
+          cat << EOF > .config
+          CONFIG_TARGET_armvirt=y
+          CONFIG_TARGET_armvirt_64=y
+          CONFIG_TARGET_ARCH_PACKAGES="arm_cortex-a7_neon-vfpv4"
+          CONFIG_TARGET_OPTIMIZATION="-Os -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard"
+          EOF
 
-      - name: Add package to openwrt config
+      - name: Add package config
         run: |
-          echo "CONFIG_PACKAGE_n3n-edge=m" >>.config
-          echo "CONFIG_PACKAGE_n3n-supernode=m" >>.config
+          echo "CONFIG_PACKAGE_n3n-edge=m" >> .config
+          echo "CONFIG_PACKAGE_n3n-supernode=m" >> .config
 
-      - name: Build a full config from our stub file
-        run: |
-          make defconfig
+      - name: Generate full config
+        run: make defconfig
 
-      - name: Download openwrt sources
-        run: |
-          make download
+      - name: Download sources
+        run: make download
 
-      - name: Build openwrt build environment
-        run: |
-          make -j `nproc` tools/install toolchain/install
+      - name: Build toolchain
+        run: make -j $(nproc) tools/install toolchain/install
 
-      - name: Build dependencies
-        run: |
-          make -j `nproc` package/libs/libpcap/compile
+      - name: Build libpcap
+        run: make -j $(nproc) package/libs/libpcap/compile
 
-      - name: Build openwrt packages
+      - name: Compile n3n packages
         env:
           PKG_VERSION: ${{ env.N3N_REF }}
         run: |
-          echo "Build for $PKG_VERSION"
-          export PKG_VERSION
-          make package/n3n/clean V=s
-          make package/n3n/prepare USE_SOURCE_DIR=$GITHUB_WORKSPACE/n3n V=s
-          make package/n3n/compile V=s
+          make package/n3n/{clean,prepare,compile} V=s \
+            USE_SOURCE_DIR=$GITHUB_WORKSPACE/n3n
 
-      - name: Upload built artifacts
-        uses: actions/upload-artifact@v2
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4  # 升级到v4版本
         with:
-          name: built-ipkgs
-          path: openwrt/bin/packages/*/base/*.ipk
+          name: armv7-packages
+          path: openwrt/bin/targets/armvirt/*/packages/*.ipk  # 修正ARM目标路径
